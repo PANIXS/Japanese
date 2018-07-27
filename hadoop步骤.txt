@@ -1,0 +1,124 @@
+0.hadoop用户
+sudo useradd -m hadoop -s /bin/bash
+这条命令创建了可以登陆的 hadoop 用户，并使用 /bin/bash 作为 shell。
+
+添加用户到root组
+以root身份登录，然后输入
+usermod -g root username ，执行完后username即归属于root组了，可以再输入
+id username查看输出验证一下，如果看到类似下面的输出：
+uid=502(username) gid=0(root) 组=0(root)
+就表示OK了
+1.时钟同步
+ 手动同步时间
+直接在 Terminal 运行下面的命令:
+[root@master zkpk]$ sudo /usr/sbin/ntpdate cn.pool.ntp.org
+2.主机名
+sudo vim /etc/hostname
+3.防火墙
+sudo service iptables stop   # 关闭防火墙服务
+sudo chkconfig iptables off  # 禁止防火墙开机自启，就不用手动关闭了
+4.hosts
+centos6 :sudo vim /etc/hosts
+centos7 : vim /etc/sysconfig/network
+5.jdk
+6.ssh
+免密码登录可能任然需要密码,这时要检查/home/user的owner和组,以及严格检查.ssh各个文件目录的权限,一个不对都不行
+(1)
+chgrp  用户名    文件名  -R
+chown 用户名   文件名  -R
+-R表示递归目录下所有文件
+(2)
+查看系统的日志文件
+tail /var/log/secure -n 20
+发现问题的所在：Authentication refused: bad ownership or modes for file
+从字面上可以看出是目录的属主和权限配置不当，查找资料得知：SSH不希望home目录和~/.ssh目录对组有写权限，通过下面几条命令改下
+chmod g-w /home/zhangming 
+chmod 700 /home/zhangming/.ssh
+chmod 600 /home/zhangming/.ssh/authorized_keys
+然后我们再去登录，就能不用密码进入了。
+(3)
+sshd为了安全，对属主的目录和文件权限有所要求。如果权限不对，则ssh的免密码登陆不生效。
+用户目录权限为 755 或者 700，就是不能是77x。
+.ssh目录权限一般为755或者700。
+rsa_id.pub 及authorized_keys权限一般为644
+rsa_id权限必须为600
+简单的方法:
+ssh-keygen -t rsa
+ssh-copy-id -i ~/.ssh/id_rsa.pub root@slave
+面命令的功能ssh-copy-id将pub值写入远程机器的~/.ssh/authorized_key中
+7.内存
+hadoop slave节点NodeManager未启动:
+这两天搭建了一个hadoop集群，未对NodeManager内存大小进行调整，结果集群启动完成后，
+发现缺少NodeManager，网上查了一下，说NodeManager内存配置太小，
+调整NodeManager内存大小为1024M，再次启动集群，发现NodeManager正常启动。
+编写一个mapreduce运行，提示NodeManager内存太小，
+无法运行，最后再次调整NodeManager内存大小为2048M，程序正常运行。
+NodeManager内存大小配置：修改/usr/hadoop/etc/hadoop目录下的 
+yarn-site.xml文件内容（具体目录以实际环境为准），修改如下：
+<property>
+        <name>yarn.nodemanager.resource.memory-mb</name>
+        <value>2048</value>
+</property>
+8.分级创建文件夹 
+sudo mkdir -p /data/hdfs/tmp
+
+
+9.如果启动时报如下错误，
+Starting resourcemanager
+ERROR: Attempting to launch yarn resourcemanager as root
+ERROR: but there is no YARN_RESOURCEMANAGER_USER defined. Aborting launch.
+是因为缺少用户定义造成的，所以分别编辑开始和关闭脚本 
+$ vim sbin/start-yarn.sh 
+$ vim sbin/stop-yarn.sh 
+顶部添加
+YARN_RESOURCEMANAGER_USER=root
+HADOOP_SECURE_DN_USER=yarn
+YARN_NODEMANAGER_USER=root
+
+（缺少用户定义而造成的）因此编辑启动和关闭
+
+$ vim sbin/start-dfs.sh
+$ vim sbin/stop-dfs.sh
+
+顶部空白处
+
+HDFS_DATANODE_USER=root
+HDFS_DATANODE_SECURE_USER=hdfs
+HDFS_NAMENODE_USER=root
+HDFS_SECONDARYNAMENODE_USER=root
+
+10则需要/data/hadoop-2.7.1/etc/hadoop/hadoop-env.sh，添加JAVA_HOME路径
+yarn-env.sh
+11.
+lsof -i:端口号 用于查看某一端口的占用情况，比如查看8000端口使用情况，lsof -i:8000
+
+
+11 格式化NameNode
+执行命令：
+hadoop namenode -format
+查看集群状态
+/data/hadoop-2.7.1/bin/hdfs dfsadmin -report
+
+关闭安全模式
+获取安全模式的状态:
+
+hdfs dfsadmin -safemode get
+
+安全模式打开
+
+hdfs dfsadmin -safemode enter
+
+安全模式关闭
+
+hdfs dfsadmin -safemode leave
+
+12.
+Hadoop HDFS的namenode WEB访问50070端口打不开解决方法
+查看了下官方文档，默认的绑定IP就是在127.0.0.1上，当然，这应该也是出于安全性的考虑吧。于是，修改默认参数： 
+在hdfs-site.xml中，更改开放端口的绑定IP：
+
+<property>
+  <name>dfs.http.address</name>
+  <value>0.0.0.0:50070</value>
+</property>
+将绑定IP改为0.0.0.0，而不是本地回环IP，这样，就能够实现外网访问本机的50070端口了
